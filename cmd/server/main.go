@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -39,6 +40,21 @@ func newMux(version, namespace string) *http.ServeMux {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+
+	// /checkout confirms an "order" — the downstream service alpha-shop calls to demonstrate a real
+	// east-west (service-to-service) call. Registered for GET and POST (ServeMux treats them as distinct
+	// patterns); GET keeps the demo a trivial curl. `host` is the pod name, so the caller can see which
+	// replica answered. ADR-057 Phase 2 later requires this path to be mutually authenticated.
+	host, _ := os.Hostname()
+	checkout := func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{
+			"order":       fmt.Sprintf("%04d", time.Now().Unix()%10000),
+			"confirmedBy": "app-alpha-checkout",
+			"host":        host,
+		})
+	}
+	mux.HandleFunc("GET /checkout", checkout)
+	mux.HandleFunc("POST /checkout", checkout)
 
 	return mux
 }

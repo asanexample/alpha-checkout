@@ -1,0 +1,27 @@
+# Allow ingress from alpha-shop (alpha-shop-dev) to this checkout service.
+#
+# Environment namespaces default-deny ingress (the Crossplane Environment Composition stamps a
+# default-deny-ingress NetworkPolicy + a gateway-only allow). NetworkPolicies are ADDITIVE, so this
+# unions an allow for the shop namespace on top — without it the in-cluster shop->checkout call is
+# dropped at this namespace's ingress. Matched by the platform labels the Composition sets on the
+# source namespace. No metadata.namespace — ArgoCD sets the destination (validate.yml forbids it).
+#
+# ADR-057 Phase 2 will harden this exact path to require mutual authentication (a CiliumNetworkPolicy
+# with authentication.mode: required); this plain allow is the Phase-A prerequisite.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-alpha-shop
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              platform.refplat.org/team: alpha
+              platform.refplat.org/product: shop
+              platform.refplat.org/stage: dev
+      ports:
+        - port: 8080
+          protocol: TCP
