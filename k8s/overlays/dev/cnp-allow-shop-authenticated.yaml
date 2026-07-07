@@ -1,0 +1,24 @@
+# Zero-trust ingress (ADR-057 Phase 2): accept traffic ONLY from alpha-shop, and REQUIRE that path to be
+# mutually authenticated (SPIFFE SVID via Cilium mutual auth). Replaces the Phase-A plain NetworkPolicy
+# allow — a plain allow would let shop through WITHOUT auth (Cilium unions allows), so the *only* shop
+# ingress path must carry authentication.mode: required. Gateway/kube-system ingress stays allowed by the
+# Composition's own policies. Paired with shop's egress allow. No metadata.namespace (ArgoCD sets it).
+#
+# Verify: a call from alpha-shop succeeds and `cilium-dbg bpf auth list` shows AUTH TYPE=spire for the
+# shop->checkout identity pair; a cross-team workload (e.g. bravo-widgets) is denied.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-ingress-from-alpha-shop
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: alpha-shop-dev
+      authentication:
+        mode: required
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP

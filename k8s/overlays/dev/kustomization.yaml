@@ -5,7 +5,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../../base
-  - netpol-allow-shop.yaml # allow ingress from alpha-shop-dev (default-deny is additive) — Phase-A prereq for shop->checkout
+  - cnp-allow-shop-authenticated.yaml # ADR-057 Phase 2: ingress from alpha-shop, mutual-auth required
 replicas:
   - name: app-alpha-checkout
     count: 1
