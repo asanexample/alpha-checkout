@@ -29,3 +29,29 @@ func TestHealthz(t *testing.T) {
 		t.Fatalf("status field = %q, want \"ok\"", body["status"])
 	}
 }
+
+// TestCheckout asserts the /checkout endpoint alpha-shop calls returns 200 with an order confirmation.
+func TestCheckout(t *testing.T) {
+	srv := httptest.NewServer(newMux("test", "test-ns"))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/checkout")
+	if err != nil {
+		t.Fatalf("GET /checkout: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	var body map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["confirmedBy"] != "app-alpha-checkout" {
+		t.Fatalf("confirmedBy = %q, want \"app-alpha-checkout\"", body["confirmedBy"])
+	}
+	if body["order"] == "" {
+		t.Fatalf("order is empty, want a confirmation number")
+	}
+}
