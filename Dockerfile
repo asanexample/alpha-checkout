@@ -1,9 +1,10 @@
 FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 
 WORKDIR /src
-# Stdlib-only: go.mod has no requires, so there is no go.sum to copy. `go mod download` is a no-op but
-# kept so the layer caches dependency resolution once this app grows deps (add go.sum to the COPY then).
-COPY go.mod ./
+# Copy the module manifests first so `go mod download` caches dependency resolution in its own layer,
+# separate from the source (a code-only change reuses the cached deps). go.sum is required now that the
+# app has deps (OTel) — a -mod=readonly build fails without it in the context.
+COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY cmd/ cmd/
 
