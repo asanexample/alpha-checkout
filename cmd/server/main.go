@@ -21,6 +21,14 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
 
 // newMux wires the routes — extracted so the unit test can exercise them without binding a port.
@@ -63,9 +71,23 @@ func main() {
 	version := getenv("VERSION", "dev")
 	namespace := getenv("NAMESPACE", "unknown")
 
+	// OpenTelemetry (ADR-077 / P14): extract the W3C traceparent that alpha-shop propagates and open a
+	// server span in the SAME trace, exporting to the platform OTLP collector. The endpoint comes from the
+	// injected env (the OTel Operator's inject-sdk annotation) — never hardcoded. Degrades cleanly (silent
+	// export failures) if OTEL_EXPORTER_OTLP_ENDPOINT is unset, e.g. local/test runs.
+	if shutdownTracer, err := initTracer(context.Background()); err != nil {
+		log.Printf("otel init failed; continuing without tracing: %v", err)
+	} else {
+		defer func() { _ = shutdownTracer(context.Background()) }()
+	}
+
+	// otelhttp.NewHandler extracts the incoming trace context and opens a server span per request, so
+	// checkout's spans join shop's distributed trace (and show as a node/edge in the service graph).
+	handler := otelhttp.NewHandler(newMux(version, namespace), "http.server")
+
 	srv := &http.Server{
 		Addr:         ":8080",
-		Handler:      newMux(version, namespace),
+		Handler:      handler,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
@@ -90,6 +112,30 @@ func main() {
 		log.Fatalf("graceful shutdown failed: %v", err)
 	}
 	log.Println("stopped")
+}
+
+// initTracer sets up the global tracer provider + W3C propagator with an OTLP/HTTP exporter. Returns a
+// shutdown func that flushes the batch processor. If OTEL_EXPORTER_OTLP_ENDPOINT is unset the exporter
+// still constructs (defaults to localhost) but export failures are silent — fine for local/test runs.
+func initTracer(ctx context.Context) (func(context.Context) error, error) {
+	exp, err := otlptracehttp.New(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("otlp exporter: %w", err)
+	}
+	res, err := resource.New(ctx,
+		resource.WithFromEnv(), // OTEL_SERVICE_NAME / OTEL_RESOURCE_ATTRIBUTES
+		resource.WithAttributes(semconv.ServiceName(getenv("OTEL_SERVICE_NAME", "app-alpha-checkout"))),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("otel resource: %w", err)
+	}
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exp),
+		sdktrace.WithResource(res),
+	)
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
+	return tp.Shutdown, nil
 }
 
 func getenv(key, def string) string {
