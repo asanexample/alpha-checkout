@@ -13,6 +13,11 @@ spec:
       app: app-alpha-checkout
   template:
     metadata:
+      annotations:
+        # P14 (ADR-077 D2): the OTel Operator injects OTEL_EXPORTER_OTLP_ENDPOINT (+ propagators/sampler)
+        # from the namespace's `platform` Instrumentation CR, so checkout's SDK exports to the collector
+        # without hardcoding the endpoint — this is what makes checkout's server span join shop's trace.
+        instrumentation.opentelemetry.io/inject-sdk: "platform"
       labels:
         app: app-alpha-checkout
         app.kubernetes.io/name: app-alpha-checkout
@@ -44,6 +49,14 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            # OpenTelemetry (ADR-077 Layer 1 / P14): the SDK opens a server span that joins alpha-shop's
+            # distributed trace and exports to the platform collector. OTEL_EXPORTER_OTLP_ENDPOINT is injected
+            # by the OTel Operator (the inject-sdk annotation above); egress to the collector is opened by the
+            # allow-egress-to-otel-collector netpol in the dev overlay.
+            - name: OTEL_SERVICE_NAME
+              value: app-alpha-checkout
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=alpha-checkout
           securityContext:
             allowPrivilegeEscalation: false
             # Immutable container filesystem — writes go to the emptyDir /tmp below. Regulated-tier ready.

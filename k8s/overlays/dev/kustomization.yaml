@@ -6,6 +6,7 @@ kind: Kustomization
 resources:
   - ../../base
   - cnp-allow-shop-authenticated.yaml # ADR-057 Phase 2: ingress from alpha-shop, mutual-auth required
+  - netpol-egress-otel.yaml # P14: egress to the OTLP collector so checkout's spans export (join shop's trace)
 replicas:
   - name: app-alpha-checkout
     count: 1

@@ -1,0 +1,24 @@
+# Allow egress from this checkout service to the platform OTLP collector (observability/otel-collector:4318)
+# so the OpenTelemetry SDK can export its server spans to Tempo — the half that lets checkout's span join
+# alpha-shop's distributed trace (and appear in the service graph).
+#
+# Environment namespaces default-deny EGRESS (the Composition's allow-dns-egress selects all pods with
+# policyTypes: Egress). NetworkPolicies are additive, so this unions an egress allow to the collector on top
+# of DNS/world. Cilium honours the namespaceSelector for cross-namespace pod-to-pod egress (an ipBlock would
+# NOT). The collector's namespace isn't Composition-managed, so no default-deny ingress there to pair against
+# — the egress half alone opens the path.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-otel-collector
+spec:
+  podSelector: {}
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - port: 4318
+          protocol: TCP
